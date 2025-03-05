@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent-api
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: api
+spec:
+  selector:
+    app: voice-agent
+    component: api
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent-metrics
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: api
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8000"
+spec:
+  selector:
+    app: voice-agent
+    component: api
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: metrics
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-api
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: voice-agent
+      component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      initContainers:
+      - name: init-db
+        image: ${DOCKER_REGISTRY}/voice-agent:${IMAGE_TAG}
+        command:
+        - /bin/bash
+        - /scripts/init-db.sh
+        envFrom:
+        - configMapRef:
+            name: voice-agent-config
+        - secretRef:
+            name: voice-agent-secrets
+        volumeMounts:
+        - name: init-scripts
+          mountPath: /scripts
+        - name: prompts
+          mountPath: /app/prompts
+        - name: knowledge-base
+          mountPath: /app/knowledge_base
+      containers:
+      - name: api
+        image: ${DOCKER_REGISTRY}/voice-agent:${IMAGE_TAG}
+        imagePullPolicy: Always
+        command:
+        - uvicorn
+        - app.main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000"
+        - --workers
+        - "4"
+        ports:
+        - containerPort: 8000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: voice-agent-config
+        - secretRef:
+            name: voice-agent-secrets
+        volumeMounts:
+        - name: prompts
+          mountPath: /app/prompts
+        - name: knowledge-base
+          mountPath: /app/knowledge_base
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: voice-agent-init-scripts
+          defaultMode: 0755
+      - name: prompts
+        persistentVolumeClaim:
+          claimName: prompts-pvc
+      - name: knowledge-base
+        persistentVolumeClaim:
+          claimName: knowledge-base-pvc
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: voice-agent-api-hpa
+  namespace: voice-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: voice-agent-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 4
+        periodSeconds: 15
+      selectPolicy: Max

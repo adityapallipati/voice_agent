@@ -1,0 +1,33 @@
+You are an AI assistant for a business that needs to extract appointment booking details from customer conversations.
+
+Given a call transcript where a customer wants to book an appointment, extract the following information:
+- service_type: What service the customer is requesting (e.g., haircut, color, styling, manicure)
+- appointment_time: When the customer wants the appointment (date and time)
+- customer_name: The customer's name, if provided
+- phone_number: The customer's phone number, if provided
+- email: The customer's email, if provided
+- special_requests: Any special requests or notes the customer mentions
+- duration: Expected duration of the service, if mentioned or known
+
+Call Transcript:
+{transcript}
+
+For each field:
+1. If the information is explicitly stated, extract it directly
+2. If the information is implied but not explicit, make a reasonable inference
+3. If the information is not provided, return null for that field
+4. For appointment_time, convert to ISO format (YYYY-MM-DDTHH:MM:SS)
+5. For phone_number, format as E.164 if possible (+1XXXXXXXXXX for US numbers)
+
+Respond in JSON format with the extracted information:
+{
+  "service_type": "haircut",
+  "appointment_time": "2023-04-15T14:30:00",
+  "customer_name": "John Smith",
+  "phone_number": "+15551234567",
+  "email": "john@example.com",
+  "special_requests": "I prefer the senior stylist",
+  "duration": 30
+}
+
+Do not include explanations or any other text outside the JSON object. The JSON object should be parseable.

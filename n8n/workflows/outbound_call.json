@@ -1,0 +1,312 @@
+{
+    "name": "Outbound Call Processing",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 15
+              }
+            ]
+          }
+        },
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.cron",
+        "position": [
+          240,
+          300
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "functionCode": "// Set API URL based on environment\nconst environments = {\n  production: \"https://api.voice-agent.example.com\",\n  staging: \"https://api-staging.voice-agent.example.com\",\n  development: \"http://localhost:8000\"\n};\n\n// Get environment from workflow data or use default\nconst environment = $workflow.environment || \"production\";\nconst apiUrl = environments[environment] || environments.production;\n\n// Add API URL to payload\nitem.json = { apiUrl };\nreturn item;"
+        },
+        "name": "Prepare API Request",
+        "type": "n8n-nodes-base.functionItem",
+        "position": [
+          460,
+          300
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$json.apiUrl}}/api/v1/callbacks/pending",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "responseFormat": "json",
+            "splitIntoItems": true
+          }
+        },
+        "name": "Get Pending Callbacks",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          680,
+          300
+        ],
+        "typeVersion": 4
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "number": [
+              {
+                "value1": "={{ $json.id }}",
+                "operation": "exists"
+              }
+            ]
+          }
+        },
+        "name": "Has Callbacks?",
+        "type": "n8n-nodes-base.if",
+        "position": [
+          900,
+          300
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/prompt-templates/callback_script",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "responseFormat": "json",
+            "splitIntoItems": false
+          }
+        },
+        "name": "Get Callback Script Template",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          1120,
+          200
+        ],
+        "typeVersion": 4
+      },
+      {
+        "parameters": {
+          "functionCode": "// Get the callback script template\nconst template = $node[\"Get Callback Script Template\"].json.content;\n\n// Get customer data\nconst customerName = item.json.customer_name || \"valued customer\";\nconst purpose = item.json.purpose || \"follow-up\";\n\n// Format callback script with customer data\nlet script = template\n  .replace(\"{{customer_name}}\", customerName)\n  .replace(\"{{purpose}}\", purpose);\n\n// Add script to payload\nitem.json.callback_script = script;\n\n// Add default VAPI settings if not present\nif (!item.json.vapi_settings) {\n  item.json.vapi_settings = {\n    voice: {\n      engine: \"openai\",\n      voice: \"nova\"\n    },\n    first_sentence: \"Hello, is this \" + customerName + \"?\"\n  };\n}\n\nreturn item;"
+        },
+        "name": "Format Callback Script",
+        "type": "n8n-nodes-base.functionItem",
+        "position": [
+          1340,
+          200
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.vapi.ai/call",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "from",
+                "value": "={{ $workflow.company_phone_number || \"+15551234567\" }}"
+              },
+              {
+                "name": "to",
+                "value": "={{ $json.phone_number }}"
+              },
+              {
+                "name": "first_sentence",
+                "value": "={{ $json.vapi_settings.first_sentence }}"
+              },
+              {
+                "name": "prompt",
+                "value": "={{ $json.callback_script }}"
+              },
+              {
+                "name": "voice",
+                "value": "={{ $json.vapi_settings.voice }}"
+              },
+              {
+                "name": "webhook_url",
+                "value": "={{ $node[\"Prepare API Request\"].json[\"apiUrl\"] }}/api/v1/calls/webhook/outbound"
+              }
+            ]
+          },
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "responseFormat": "json",
+            "splitIntoItems": false
+          }
+        },
+        "name": "Initiate Outbound Call",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          1560,
+          200
+        ],
+        "typeVersion": 4
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/callbacks/{{$json.id}}/status",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "status",
+                "value": "in_progress"
+              },
+              {
+                "name": "call_id",
+                "value": "={{ $json.call_id }}"
+              }
+            ]
+          },
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "responseFormat": "json",
+            "splitIntoItems": false
+          }
+        },
+        "name": "Update Callback Status",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          1780,
+          200
+        ],
+        "typeVersion": 4
+      },
+      {
+        "parameters": {
+          "content": "={{ {success: true, message: \"No pending callbacks found\"} }}",
+          "options": {}
+        },
+        "name": "No Callbacks",
+        "type": "n8n-nodes-base.noOp",
+        "position": [
+          1120,
+          400
+        ],
+        "typeVersion": 1
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Prepare API Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare API Request": {
+        "main": [
+          [
+            {
+              "node": "Get Pending Callbacks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Pending Callbacks": {
+        "main": [
+          [
+            {
+              "node": "Has Callbacks?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Has Callbacks?": {
+        "main": [
+          [
+            {
+              "node": "Get Callback Script Template",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "No Callbacks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Callback Script Template": {
+        "main": [
+          [
+            {
+              "node": "Format Callback Script",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Callback Script": {
+        "main": [
+          [
+            {
+              "node": "Initiate Outbound Call",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Initiate Outbound Call": {
+        "main": [
+          [
+            {
+              "node": "Update Callback Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": true,
+    "settings": {
+      "executionOrder": "v1",
+      "saveManualExecutions": true,
+      "callerPolicy": "workflowCredentialUsage",
+      "errorWorkflow": "Error Handler",
+      "saveExecutionProgress": true,
+      "saveDataErrorExecution": "all"
+    },
+    "tags": [
+      "vapi",
+      "outbound-call",
+      "callback"
+    ],
+    "pinData": {},
+    "staticData": {
+      "environment": "production",
+      "company_phone_number": "+15551234567"
+    },
+    "versionId": "1",
+    "id": "2",
+    "meta": {
+      "instanceId": "123456789012345678901234"
+    }
+  }

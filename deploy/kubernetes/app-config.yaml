@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-agent-config
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+data:
+  APP_ENV: "production"
+  APP_HOST: "0.0.0.0"
+  APP_PORT: "8000"
+  APP_WORKERS: "4"
+  LOG_LEVEL: "info"
+  CORS_ORIGINS: "*"
+  PROMPT_TEMPLATES_DIR: "/app/prompts"
+  KNOWLEDGE_BASE_DIR: "/app/knowledge_base"
+  DATABASE_URL: "postgresql://postgres:$(DB_PASSWORD)@postgres.voice-agent.svc.cluster.local:5432/voice_agent"
+  REDIS_URL: "redis://redis.voice-agent.svc.cluster.local:6379/0"
+  N8N_URL: "http://n8n.voice-agent.svc.cluster.local:5678"
+  CUSTOMER_SERVICE_NUMBER: "+15551234567"
+  CRM_TYPE: "none"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: voice-agent-secrets
+  namespace: voice-agent
+type: Opaque
+data:
+  # These are placeholders - replace with actual base64-encoded values
+  DB_PASSWORD: cGFzc3dvcmQ=                 # "password"
+  SECRET_KEY: c2VjcmV0LWtleS1mb3ItdG9rZW4=  # "secret-key-for-token"
+  VAPI_API_KEY: dmFwaS1hcGkta2V5          # "vapi-api-key"
+  ANTHROPIC_API_KEY: YW50aHJvcGljLWFwaS1rZXk= # "anthropic-api-key"
+  N8N_API_KEY: bjhuLWFwaS1rZXk=            # "n8n-api-key"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prompts-pvc
+  namespace: voice-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: knowledge-base-pvc
+  namespace: voice-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-agent-init-scripts
+  namespace: voice-agent
+data:
+  init-db.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Running database migrations..."
+    alembic upgrade head
+    
+    echo "Import initial prompt templates..."
+    python -c '
+    import os
+    import asyncio
+    from app.core.prompt_manager import PromptManager
+    
+    async def import_templates():
+        prompt_manager = PromptManager()
+        templates_dir = "/app/prompts"
+        if os.path.exists(templates_dir):
+            for filename in os.listdir(templates_dir):
+                if filename.endswith(".txt"):
+                    name = os.path.splitext(filename)[0]
+                    with open(os.path.join(templates_dir, filename), "r") as f:
+                        content = f.read()
+                        try:
+                            await prompt_manager.create_prompt(name, content, f"Imported from {filename}")
+                            print(f"Imported template: {name}")
+                        except Exception as e:
+                            if "already exists" not in str(e):
+                                print(f"Error importing template {name}: {e}")
+    
+    asyncio.run(import_templates())
+    '
+    
+    echo "Initialization completed."

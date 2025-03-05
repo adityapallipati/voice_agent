@@ -1,0 +1,399 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voice-agent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voice-agent-config
+  namespace: voice-agent
+data:
+  APP_ENV: "production"
+  APP_HOST: "0.0.0.0"
+  APP_PORT: "8000"
+  APP_WORKERS: "4"
+  LOG_LEVEL: "info"
+  PROMPT_TEMPLATES_DIR: "/app/prompts"
+  KNOWLEDGE_BASE_DIR: "/app/knowledge_base"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: voice-agent-secrets
+  namespace: voice-agent
+type: Opaque
+data:
+  # These are placeholder values - replace with real base64-encoded values
+  DB_PASSWORD: cGFzc3dvcmQ= # "password"
+  SECRET_KEY: c2VjcmV0LWtleQ== # "secret-key"
+  VAPI_API_KEY: dmFwaS1hcGkta2V5 # "vapi-api-key"
+  ANTHROPIC_API_KEY: YW50aHJvcGljLWFwaS1rZXk= # "anthropic-api-key"
+  N8N_API_KEY: bjhuLWFwaS1rZXk= # "n8n-api-key"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-api
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: voice-agent
+      component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        component: api
+    spec:
+      containers:
+      - name: api
+        image: your-registry/voice-agent:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://postgres:$(DB_PASSWORD)@postgres.voice-agent.svc.cluster.local:5432/voice_agent"
+        - name: REDIS_URL
+          value: "redis://redis.voice-agent.svc.cluster.local:6379/0"
+        - name: N8N_URL
+          value: "http://n8n.voice-agent.svc.cluster.local:5678"
+        envFrom:
+        - configMapRef:
+            name: voice-agent-config
+        - secretRef:
+            name: voice-agent-secrets
+        volumeMounts:
+        - name: prompts
+          mountPath: /app/prompts
+        - name: knowledge-base
+          mountPath: /app/knowledge_base
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: prompts
+        emptyDir: {}
+      - name: knowledge-base
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent-api
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: api
+spec:
+  selector:
+    app: voice-agent
+    component: api
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-agent-ingress
+  namespace: voice-agent
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  tls:
+  - hosts:
+    - api.voice-agent.example.com
+    secretName: voice-agent-tls
+  rules:
+  - host: api.voice-agent.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: voice-agent-api
+            port:
+              name: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        component: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: voice_agent
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: voice-agent-secrets
+              key: DB_PASSWORD
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-pvc
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: postgres
+spec:
+  selector:
+    app: voice-agent
+    component: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent
+      component: redis
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        component: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7
+        ports:
+        - containerPort: 6379
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: redis
+spec:
+  selector:
+    app: voice-agent
+    component: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: n8n
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent
+      component: n8n
+  template:
+    metadata:
+      labels:
+        app: voice-agent
+        component: n8n
+    spec:
+      containers:
+      - name: n8n
+        image: n8nio/n8n:latest
+        ports:
+        - containerPort: 5678
+        env:
+        - name: N8N_BASIC_AUTH_ACTIVE
+          value: "true"
+        - name: N8N_BASIC_AUTH_USER
+          value: "admin"
+        - name: N8N_BASIC_AUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: voice-agent-secrets
+              key: N8N_API_KEY
+        - name: WEBHOOK_URL
+          value: "http://n8n.voice-agent.svc.cluster.local:5678/"
+        - name: N8N_PORT
+          value: "5678"
+        - name: N8N_HOST
+          value: "0.0.0.0"
+        - name: N8N_PROTOCOL
+          value: "http"
+        - name: GENERIC_TIMEZONE
+          value: "UTC"
+        volumeMounts:
+        - name: n8n-data
+          mountPath: /home/node/.n8n
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+      volumes:
+      - name: n8n-data
+        persistentVolumeClaim:
+          claimName: n8n-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: n8n-pvc
+  namespace: voice-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: n8n
+spec:
+  selector:
+    app: voice-agent
+    component: n8n
+  ports:
+  - port: 5678
+    targetPort: 5678
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n-ingress
+  namespace: voice-agent
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - n8n.voice-agent.example.com
+    secretName: n8n-tls
+  rules:
+  - host: n8n.voice-agent.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678

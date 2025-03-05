@@ -1,0 +1,105 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-agent-ingress
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  tls:
+  - hosts:
+    - api.voice-agent.example.com
+    secretName: voice-agent-tls
+  rules:
+  - host: api.voice-agent.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: voice-agent-api
+            port:
+              name: http
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n-ingress
+  namespace: voice-agent
+  labels:
+    app: voice-agent
+    component: n8n
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # Basic auth for additional security
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: n8n-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+spec:
+  tls:
+  - hosts:
+    - n8n.voice-agent.example.com
+    secretName: n8n-tls
+  rules:
+  - host: n8n.voice-agent.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678
+
+---
+# Create basic auth secret for N8N
+apiVersion: v1
+kind: Secret
+metadata:
+  name: n8n-basic-auth
+  namespace: voice-agent
+type: Opaque
+data:
+  # Generated with: htpasswd -bc auth admin secure_password
+  # Replace with your own credentials
+  auth: YWRtaW46JGFwcjEkUHZ3RnMxMVMkOFQ4VkFRZUFZbU5MdHpobWJSZkF1MAo=
+
+---
+# Certificate issuer for TLS certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@voice-agent.example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
