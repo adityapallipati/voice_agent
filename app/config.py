@@ -30,20 +30,8 @@ class Settings(BaseSettings):
         raise ValueError(v)
     
     # Database
-    DATABASE_URL: Optional[PostgresDsn] = None
-    
-    @validator("DATABASE_URL", pre=True)
-    def assemble_db_connection(cls, v: Optional[str]) -> Optional[str]:
-        if isinstance(v, str):
-            return v
-        return PostgresDsn.build(
-            scheme="postgresql+asyncpg",
-            username=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", "postgres"),
-            host=os.getenv("POSTGRES_HOST", "db"),
-            port=os.getenv("POSTGRES_PORT", "5432"),
-            path=f"/{os.getenv('POSTGRES_DB', 'voice_agent')}"
-        )
+    DATABASE_URL: str = "sqlite:///./voice_agent.db"
+        
     
     # API Keys
     VAPI_API_KEY: str

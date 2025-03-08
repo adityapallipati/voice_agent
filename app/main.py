@@ -1,83 +1,61 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+import os
 import logging
-import time
-from typing import Callable
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
+import json
 
-from app.api.router import api_router
-from app.api.health import health_router
-from app.core.config import settings
-from app.db.session import engine, init_db
-
-# Configure Sentry if DSN is provided
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        integrations=[FastApiIntegration()],
-        traces_sample_rate=0.2,
-    )
+from app.db.session import get_db
+from app.config import settings
 
 # Configure logging
-logging.basicConfig(
-    level=settings.LOG_LEVEL,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+# Initialize the FastAPI app
 app = FastAPI(
     title="Voice Agent API",
-    description="API for voice agent system handling inbound and outbound calls",
-    version="1.0.0",
-    docs_url="/docs" if settings.APP_ENV != "production" else None,
-    redoc_url="/redoc" if settings.APP_ENV != "production" else None,
+    description="API for handling voice agent functionality",
+    version="0.1.0"
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
-# Add request ID middleware
-@app.middleware("http")
-async def add_request_id_middleware(request: Request, call_next: Callable):
-    request_id = request.headers.get("X-Request-ID", None)
-    if not request_id:
-        request_id = str(int(time.time() * 1000))
-        request.headers.__dict__["_headers"]["x-request-id"] = request_id
+# Root endpoint
+@app.get("/")
+def read_root():
+    return {"message": "Voice Agent API is running"}
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {
+        "status": "ok",
+        "app_env": settings.APP_ENV,
+        "prompt_templates_dir": settings.PROMPT_TEMPLATES_DIR,
+        "prompt_files": os.listdir(settings.PROMPT_TEMPLATES_DIR) if os.path.exists(settings.PROMPT_TEMPLATES_DIR) else []
+    }
+
+# Process call endpoint
+@app.post("/api/v1/calls/process")
+def process_call(call_data: dict, db: Session = Depends(get_db)):
+    logger.info(f"Processing call: {json.dumps(call_data, default=str)}")
     
-    start_time = time.time()
-    try:
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        response.headers["X-Process-Time"] = str(process_time)
-        response.headers["X-Request-ID"] = request_id
-        return response
-    except Exception as e:
-        logger.exception(f"Request failed: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error", "request_id": request_id},
-        )
+    # For testing, just echo back with a static response
+    return {
+        "status": "success",
+        "intent": "general_question",
+        "response": "Thank you for calling. This is a test response from the Voice Agent API."
+    }
 
-# Include routers
-app.include_router(health_router)
-app.include_router(api_router, prefix="/api")
-
-# Startup and shutdown events
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Starting up Voice Agent API")
-    await init_db()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down Voice Agent API")
+# Run the application
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

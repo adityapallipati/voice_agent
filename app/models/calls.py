@@ -11,11 +11,15 @@ class CallBase(BaseModel):
 class ProcessCallRequest(BaseModel):
     """Model for processing a call from VAPI webhook."""
     call_id: str = Field(..., description="Unique call identifier")
+    transcript: str = Field(..., description="Call transcript")
     customer_id: Optional[str] = Field(None, description="Customer ID if known")
     phone_number: Optional[str] = Field(None, description="Caller phone number")
-    transcript: str = Field(..., description="Call transcript")
     audio_url: Optional[str] = Field(None, description="URL to audio recording")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+    class Config:
+        # Allow extra fields to be flexible with N8N payloads
+        extra = "allow"
 
 class CallCreate(CallBase):
     """Model for creating a call record."""
@@ -79,3 +83,22 @@ class OutboundCallRequest(BaseModel):
 class TransferCallRequest(BaseModel):
     """Model for transferring a call."""
     phone_number: str = Field(..., description="Phone number to transfer to")
+
+class CallProcessingResponse(BaseModel):
+    """Model for call processing response."""
+    status: str = Field(..., description="Status of the call processing (success/error)")
+    intent: str = Field(..., description="Detected intent from the call")
+    response: str = Field(..., description="Response text to be sent back to the caller")
+    call_id: Optional[str] = Field(None, description="Call ID if available")
+    customer_id: Optional[str] = Field(None, description="Customer ID if available")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    
+    class Config:
+        # Make this model match the structure expected by VAPI
+        schema_extra = {
+            "example": {
+                "status": "success",
+                "intent": "book_appointment",
+                "response": "I'd be happy to book your haircut for tomorrow at 3pm. Is that correct?"
+            }
+        }

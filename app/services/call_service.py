@@ -40,21 +40,158 @@ class CallService:
         
         # Parse intent
         intent = intent_response.get("intent", "unknown")
+        logger.info(f"Detected intent: {intent}")
         
-        # Check knowledge base for relevant information
-        kb_response = None
-        if intent == "general_question":
+        # Process based on intent
+        response_text = ""
+        if intent == "book_appointment":
+            appointment_response = await self._process_booking(request.transcript)
+            response_text = appointment_response.get("response", "")
+        elif intent == "reschedule":
+            reschedule_response = await self._process_reschedule(request.transcript)
+            response_text = reschedule_response.get("response", "")
+        elif intent == "cancel":
+            cancel_response = await self._process_cancellation(request.transcript)
+            response_text = cancel_response.get("response", "")
+        elif intent == "general_question":
             kb_response = await self.knowledge_base.query(request.transcript)
+            response_text = kb_response or "I don't have that information. Would you like me to connect you with someone who can help?"
+        elif intent == "human_agent":
+            response_text = "I'll connect you with a customer service representative right away."
+        elif intent == "callback":
+            callback_response = await self._process_callback_request(request.transcript)
+            response_text = callback_response.get("response", "")
+        else:
+            response_text = "I'm not sure I understood. Could you please rephrase your request?"
         
         # Generate response based on intent
         response_data = {
             "intent": intent,
-            "kb_response": kb_response,
+            "kb_response": response_text if intent == "general_question" else None,
             "call_id": request.call_id,
-            "customer_id": customer.id
+            "customer_id": customer.id,
+            "response": response_text
         }
         
         return response_data
+    
+    async def _process_booking(self, transcript: str) -> Dict[str, Any]:
+        """Process an appointment booking request."""
+        try:
+            # Get the appointment details extraction template
+            prompt_template = await self.prompt_manager.get_prompt("extract_appointment_details")
+            
+            # Extract appointment details
+            details_response = await self.llm_processor.process(
+                prompt_template,
+                {"transcript": transcript}
+            )
+            
+            # Construct a natural language response
+            service_type = details_response.get("service_type", "appointment")
+            appointment_time = details_response.get("appointment_time", "your requested time")
+            
+            # Format the response
+            response = f"I'd be happy to book your {service_type} for {appointment_time}. "
+            
+            # Add customer name if available
+            if details_response.get("customer_name"):
+                response += f"I have you down as {details_response.get('customer_name')}. "
+                
+            response += "Is that correct?"
+            
+            return {
+                "details": details_response,
+                "response": response
+            }
+        except Exception as e:
+            logger.error(f"Error processing booking: {e}")
+            return {
+                "details": {},
+                "response": "I'm having trouble booking your appointment. Could you please try again with the date and time you'd like?"
+            }
+    
+    async def _process_reschedule(self, transcript: str) -> Dict[str, Any]:
+        """Process an appointment rescheduling request."""
+        try:
+            # Get the reschedule details extraction template
+            prompt_template = await self.prompt_manager.get_prompt("extract_reschedule_details")
+            
+            # Extract reschedule details
+            details_response = await self.llm_processor.process(
+                prompt_template,
+                {"transcript": transcript}
+            )
+            
+            # Construct a natural language response
+            old_time = details_response.get("old_time", "your current appointment")
+            new_time = details_response.get("new_time", "the requested time")
+            
+            # Format the response
+            response = f"I'll reschedule your appointment from {old_time} to {new_time}. "
+            response += "Is that correct?"
+            
+            return {
+                "details": details_response,
+                "response": response
+            }
+        except Exception as e:
+            logger.error(f"Error processing reschedule: {e}")
+            return {
+                "details": {},
+                "response": "I'm having trouble rescheduling your appointment. Could you please confirm the current appointment time and your preferred new time?"
+            }
+    
+    async def _process_cancellation(self, transcript: str) -> Dict[str, Any]:
+        """Process an appointment cancellation request."""
+        try:
+            # Get the cancellation details extraction template
+            prompt_template = await self.prompt_manager.get_prompt("extract_cancellation_details")
+            
+            # Extract cancellation details
+            details_response = await self.llm_processor.process(
+                prompt_template,
+                {"transcript": transcript}
+            )
+            
+            # Construct a natural language response
+            appointment_time = details_response.get("appointment_time", "your appointment")
+            reschedule_later = details_response.get("reschedule_later", False)
+            
+            # Format the response
+            response = f"I've cancelled {appointment_time}. "
+            
+            if reschedule_later:
+                response += "Would you like to reschedule for another time?"
+            else:
+                response += "Is there anything else I can help you with today?"
+            
+            return {
+                "details": details_response,
+                "response": response
+            }
+        except Exception as e:
+            logger.error(f"Error processing cancellation: {e}")
+            return {
+                "details": {},
+                "response": "I'm having trouble cancelling your appointment. Could you please confirm which appointment you'd like to cancel?"
+            }
+    
+    async def _process_callback_request(self, transcript: str) -> Dict[str, Any]:
+        """Process a callback request."""
+        try:
+            # Extract callback details using Claude
+            # For simplicity, we'll just respond directly
+            response = "I'll make sure someone calls you back. What's the best time to reach you?"
+            
+            return {
+                "response": response
+            }
+        except Exception as e:
+            logger.error(f"Error processing callback request: {e}")
+            return {
+                "response": "I'll arrange for someone to call you back. Is there a specific time that works best for you?"
+            }
     
     async def log_call(self, call_id: str, result: Dict[str, Any]) -> None:
         """
