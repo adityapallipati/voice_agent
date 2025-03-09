@@ -6,7 +6,7 @@ from typing import Optional
 import logging
 
 from app.db.session import get_db
-from app.core.config import settings
+from app.config import settings
 
 # Security scheme for bearer token authentication
 security = HTTPBearer()
