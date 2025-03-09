@@ -1,35 +1,32 @@
 {
-    "name": "Inbound Call Processing",
+    "name": "Inbound Call Handler",
     "nodes": [
       {
         "parameters": {
           "httpMethod": "POST",
           "path": "webhook/inbound-call",
-          "options": {
-            "responseCode": 200,
-            "responseMode": "lastNode"
-          }
+          "options": {}
         },
         "name": "VAPI Webhook",
         "type": "n8n-nodes-base.webhook",
         "position": [
-          240,
-          300
+          -1780,
+          -60
         ],
-        "typeVersion": 1
+        "typeVersion": 1,
+        "id": "83a3db2d-597f-4415-ba2e-d2d0c6983a8a",
+        "webhookId": "b3fad006-569e-45d6-b636-dffa34845a95"
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "={{$node[\"n8n-nodes-base.functionItem\"].json[\"apiUrl\"]}}/api/v1/calls/process",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "=https://bfd5537d7909.ngrok.app/api/v1/calls/process",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
               {
                 "name": "call_id",
-                "value": "={{ $json.call_id }}"
+                "value": "={{ $('VAPI Webhook').item.json.body.call_id }}"
               },
               {
                 "name": "customer_id",
@@ -37,11 +34,11 @@
               },
               {
                 "name": "phone_number",
-                "value": "={{ $json.from }}"
+                "value": "={{ $json.body.from }}"
               },
               {
                 "name": "transcript",
-                "value": "={{ $json.transcript }}"
+                "value": "={{ $json.body.transcript }}"
               },
               {
                 "name": "audio_url",
@@ -54,30 +51,30 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Process Call with Voice Agent API",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          680,
-          300
+          -1340,
+          -60
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "11d06a72-88e6-4cc5-b171-007833b3cc21"
       },
       {
         "parameters": {
-          "functionCode": "// Set API URL based on environment\nconst environments = {\n  production: \"https://api.voice-agent.example.com\",\n  staging: \"https://api-staging.voice-agent.example.com\",\n  development: \"http://localhost:8000\"\n};\n\n// Get environment from workflow data or use default\nconst environment = $workflow.environment || \"production\";\nconst apiUrl = environments[environment] || environments.production;\n\n// Add API URL to payload\nitem.json.apiUrl = apiUrl;\nreturn item;"
+          "functionCode": "// Set API URL based on environment\nconst environments = {\n  ngrok: \"https://1215-23-92-1-95.ngrok-free.app\",\n  production: \"https://api.voice-agent.example.com\",\n  staging: \"https://api-staging.voice-agent.example.com\",\n  development: \"http://localhost:8000\"\n};\n\n// Get environment from workflow data or use default\nconst environment = $workflow.environment || \"ngrok\";\nconst apiUrl = environments[environment] || environments.ngrok;\n\n// Ensure both item and item.json exist\nif (!item) {\n  item = { json: {} };\n} else if (!item.json) {\n  item.json = {};\n}\n\n// Add API URL to payload\nitem.json.apiUrl = apiUrl;\nreturn item;"
         },
         "name": "Prepare API Request",
         "type": "n8n-nodes-base.functionItem",
         "position": [
-          460,
-          300
+          -1560,
+          -60
         ],
-        "typeVersion": 1
+        "typeVersion": 1,
+        "id": "bbd364e4-d71b-4441-8fc1-64fdfb05256d"
       },
       {
         "parameters": {
@@ -93,19 +90,33 @@
         "name": "Intent Detected?",
         "type": "n8n-nodes-base.if",
         "position": [
-          900,
-          300
+          -1120,
+          -60
         ],
-        "typeVersion": 1
+        "typeVersion": 1,
+        "id": "60e2ef97-2f08-4481-bcfa-35c119fb154b"
       },
       {
         "parameters": {
-          "conditions": {
-            "string": [
+          "rules": {
+            "rules": [
               {
-                "value1": "={{ $json.intent }}",
-                "value2": "book_appointment",
-                "operation": "equals"
+                "operation": "equal"
+              },
+              {
+                "operation": "equal",
+                "value2": 1,
+                "output": 1
+              },
+              {
+                "operation": "equal",
+                "value2": 2,
+                "output": 2
+              },
+              {
+                "operation": "equal",
+                "value2": 3,
+                "output": 3
               }
             ]
           }
@@ -113,17 +124,17 @@
         "name": "Check Intent Type",
         "type": "n8n-nodes-base.switch",
         "position": [
-          1120,
-          200
+          -920,
+          -220
         ],
-        "typeVersion": 1
+        "typeVersion": 1,
+        "id": "ef7d7c7d-673a-4fa9-a644-ed02354d1e3c",
+        "alwaysOutputData": true
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "={{$node[\"n8n-nodes-base.functionItem\"].json[\"apiUrl\"]}}/api/v1/appointments",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "=https://bfd5537d7909.ngrok.app/api/v1/appointments",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
@@ -134,25 +145,22 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Book Appointment",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          1340,
-          80
+          -680,
+          -280
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "fb23a9a2-e319-43fe-b173-543d3596e662"
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "={{$node[\"n8n-nodes-base.functionItem\"].json[\"apiUrl\"]}}/api/v1/appointments/reschedule",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/appointments/reschedule",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
@@ -163,25 +171,22 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Reschedule Appointment",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          1340,
-          200
+          -680,
+          -160
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "6cdbba82-ee8e-40a1-9bc4-4379f9fc246d"
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "={{$node[\"n8n-nodes-base.functionItem\"].json[\"apiUrl\"]}}/api/v1/appointments/cancel",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/appointments/cancel",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
@@ -192,25 +197,22 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Cancel Appointment",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          1340,
-          320
+          -680,
+          -40
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "a77bf08e-c8e9-464d-b465-a60e1a2396cf"
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "https://api.vapi.ai/call/{{$json.call_id}}/transfer",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/calls/{{$json.call_id}}/transfer",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
@@ -221,25 +223,22 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Transfer to Human Agent",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          1340,
-          440
+          -680,
+          80
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "255a9497-fa4e-419f-a932-24a9186758e0"
       },
       {
         "parameters": {
           "method": "POST",
-          "url": "={{$node[\"n8n-nodes-base.functionItem\"].json[\"apiUrl\"]}}/api/v1/callbacks/schedule",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
+          "url": "={{$node[\"Prepare API Request\"].json[\"apiUrl\"]}}/api/v1/callbacks/schedule",
           "sendBody": true,
           "bodyParameters": {
             "parameters": [
@@ -262,33 +261,86 @@
             ]
           },
           "options": {
-            "allowUnauthorizedCerts": true,
-            "responseFormat": "json",
-            "splitIntoItems": false
+            "allowUnauthorizedCerts": true
           }
         },
         "name": "Schedule Callback",
         "type": "n8n-nodes-base.httpRequest",
         "position": [
-          1340,
-          560
+          -680,
+          200
         ],
-        "typeVersion": 4
+        "typeVersion": 4,
+        "id": "0aaca58a-3973-4380-87af-b19580d6072b"
       },
       {
         "parameters": {
-          "content": "={\n  \"response\": {\n    \"voice\": {\n      \"engine\": \"openai\",\n      \"voice\": \"nova\"\n    },\n    \"content\": \"{{ $json.response || 'I\\'m sorry, but I couldn\\'t process your request. Let me transfer you to a customer service representative who can assist you further.' }}\"\n  }\n}",
+          "calendar": {
+            "__rl": true,
+            "value": "adityapallipati.cloud@gmail.com",
+            "mode": "list",
+            "cachedResultName": "adityapallipati.cloud@gmail.com"
+          },
+          "start": {
+            "dateTime": "={{$json.appointmentTime}}"
+          },
+          "end": {
+            "dateTime": "={{new Date(new Date($json.appointmentTime).getTime() + 30 * 60 * 1000).toISOString()}}"
+          },
+          "additionalFields": {}
+        },
+        "name": "Create Calendar Event",
+        "type": "n8n-nodes-base.googleCalendar",
+        "position": [
+          -420,
+          -280
+        ],
+        "typeVersion": 1,
+        "id": "72db2e0e-1cb8-4107-90d0-a640db43d203",
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "HH072OxSSzf0vbZg",
+            "name": "Google Calendar account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "from": "+14694552537",
+          "to": "={{ $json.from }}",
+          "message": "Hello {{ $json.customer_name || 'Customer' }}, your appointment is confirmed for {{ $json.appointmentDate }} at {{ $json.appointmentTime }}. Reply to this message if you have any questions.",
+          "options": {}
+        },
+        "name": "Send Confirmation SMS",
+        "type": "n8n-nodes-base.twilio",
+        "position": [
+          -420,
+          -160
+        ],
+        "typeVersion": 1,
+        "id": "90d491e3-aaa2-4a9f-b9cc-906e7cea6541",
+        "credentials": {
+          "twilioApi": {
+            "id": "XLAAIn8UmgfcdHuT",
+            "name": "Twilio account"
+          }
+        }
+      },
+      {
+        "parameters": {
           "options": {}
         },
         "name": "Prepare VAPI Response",
         "type": "n8n-nodes-base.respondToWebhook",
         "position": [
-          1600,
-          300
+          -420,
+          -60
         ],
-        "typeVersion": 1
+        "typeVersion": 1,
+        "id": "0b4c0f6f-fc1a-47c8-9dd1-3ddc061f16fa"
       }
     ],
+    "pinData": {},
     "connections": {
       "VAPI Webhook": {
         "main": [
@@ -301,22 +353,22 @@
           ]
         ]
       },
-      "Process Call with Voice Agent API": {
+      "Prepare API Request": {
         "main": [
           [
             {
-              "node": "Intent Detected?",
+              "node": "Process Call with Voice Agent API",
               "type": "main",
               "index": 0
             }
           ]
         ]
       },
-      "Prepare API Request": {
+      "Process Call with Voice Agent API": {
         "main": [
           [
             {
-              "node": "Process Call with Voice Agent API",
+              "node": "Intent Detected?",
               "type": "main",
               "index": 0
             }
@@ -370,17 +422,32 @@
               "type": "main",
               "index": 0
             }
-          ],
+          ]
+        ]
+      },
+      "Book Appointment": {
+        "main": [
           [
             {
-              "node": "Schedule Callback",
+              "node": "Create Calendar Event",
               "type": "main",
               "index": 0
             }
           ]
         ]
       },
-      "Book Appointment": {
+      "Create Calendar Event": {
+        "main": [
+          [
+            {
+              "node": "Send Confirmation SMS",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Confirmation SMS": {
         "main": [
           [
             {
@@ -438,25 +505,13 @@
     },
     "active": true,
     "settings": {
-      "executionOrder": "v1",
-      "saveManualExecutions": true,
-      "callerPolicy": "workflowCredentialUsage",
-      "errorWorkflow": "Error Handler",
-      "saveExecutionProgress": true,
-      "saveDataErrorExecution": "all"
+      "executionOrder": "v1"
     },
-    "tags": [
-      "vapi",
-      "inbound-call"
-    ],
-    "pinData": {},
-    "staticData": {
-      "environment": "production",
-      "customer_service_number": "+15551234567"
-    },
-    "versionId": "1",
-    "id": "1",
+    "versionId": "11d187cf-e180-45d9-982f-5078790c33bb",
     "meta": {
-      "instanceId": "123456789012345678901234"
-    }
+      "templateCredsSetupCompleted": true,
+      "instanceId": "a46b281ab13dbab9f2c6dd5f00ecae6ea2e265b5e1d2bd2663745babbdd568eb"
+    },
+    "id": "hqvSipBAkWC3CklH",
+    "tags": []
   }
