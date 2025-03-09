@@ -14,6 +14,7 @@ RUN apt-get update \
         postgresql-client \
         build-essential \
         libpq-dev \
+        portaudio19-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
